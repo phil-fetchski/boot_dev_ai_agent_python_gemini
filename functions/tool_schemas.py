@@ -3,6 +3,7 @@
 from google.genai import types
 
 
+
 # Tool Schema for functions.get_files_info.py / get_files_info() function - Google Genai (Gemini SDK Tool Schema - FunctionDeclaration)
 schema_get_files_info = types.FunctionDeclaration(
     name="get_files_info",

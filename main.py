@@ -1,16 +1,15 @@
 import os
 import argparse
-
 from dotenv import load_dotenv
 from google import genai
-
+from collections.abc import Callable
 from google.genai import types
-
 from prompts import system_prompt
-
-# INDEX of Tool Schemas/Function Declarations
-from functions.tool_schemas import available_functions
-
+# Get Tokens from Response (res)
+from get_tokens import get_toks
+# INDEX of Tool Schemas/Function Declarations, and FUNCTION_MAP
+from functions.tool_schemas import *
+from functions.call_function import call_function
 
 # setup google genai Client
 load_dotenv()
@@ -27,10 +26,8 @@ parser.add_argument("user_prompt", type=str, help="The user prompt is where you 
 parser.add_argument("--verbose", action="store_true", help="Enable verbose output")
 args = parser.parse_args()
 
-
 # MESSAGES
 messages = [types.Content(role="user", parts=[types.Part(text=args.user_prompt)])]
-
 
 # Generate Content with Gemini
 response = client.models.generate_content(
@@ -46,19 +43,6 @@ if not response:
     raise RuntimeError("there was no response")
 else:
     res = response
-
-
-# Get Tokens from Response Object, either "prompt" or "response" tokens
-def get_toks(res: GenerateContentResponse, tok_type: str):
-    if tok_type not in ["prompt", "response"]:
-        raise ValueError("tok_type must be either 'prompt' or 'response'")
-    if not res.usage_metadata:
-        raise RuntimeError("usage metadata not available")
-    attr_type = "prompt_token_count" if tok_type == "prompt" else "candidates_token_count"
-    toks = getattr(res.usage_metadata, attr_type, None)
-    if not toks:
-        raise RuntimeError(f"usage metadata does not contain {tok_type}")
-    return f"{tok_type.capitalize()} tokens: {toks}"
 
 # Verbose Output Func
 def get_verbose():
@@ -76,20 +60,33 @@ def get_verbose():
     except (RuntimeError, ValueError) as e:
         print(f"Error retrieving tokens: {e}")
 
-
-
 # MAIN
 def main():
     
+    is_verbose = False 
+
     if args.verbose:
         get_verbose()
+        is_verbose = True
     
     try:
         # Get Function Calls - TOOL CALLS if any
         if res.function_calls:
             if res.function_calls != None:
                 for fc in res.function_calls:
-                    print(f"Calling function: {fc.name}({fc.args})")
+                    fc_result = call_function(fc)
+
+                    if not fc_result.parts:
+                        raise Exception(f"The function call result had no or empty .parts - PARTS: {fc_result.parts}")
+
+                    if not fc_result.parts[0].function_response:
+                        raise Exception(f"The function calls result parts[0].function_response is None or empty")
+
+                    if is_verbose:
+                        print(f"-> {fc_result.parts[0].function_response.response}")
+                    
+
+                    
 
         # Text Response from LLM            
         if res.text:
@@ -98,10 +95,7 @@ def main():
 
     except RuntimeError as e:
         print(e)
-
     
-
-
 
 if __name__ == "__main__":
     main()
