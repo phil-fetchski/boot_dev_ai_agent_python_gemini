@@ -6,6 +6,12 @@ from google import genai
 
 from google.genai import types
 
+from prompts import system_prompt
+
+# INDEX of Tool Schemas/Function Declarations
+from functions.tool_schemas import available_functions
+
+
 # setup google genai Client
 load_dotenv()
 api_key = os.environ.get("GEMINI_API_KEY")
@@ -29,7 +35,10 @@ messages = [types.Content(role="user", parts=[types.Part(text=args.user_prompt)]
 # Generate Content with Gemini
 response = client.models.generate_content(
     model='gemini-2.5-flash',
-    contents=messages
+    contents=messages,
+    config=types.GenerateContentConfig(
+        tools=[available_functions], system_instruction=system_prompt
+    )
 )
 
 # Get Response and Response Text or Raise
@@ -38,10 +47,6 @@ if not response:
 else:
     res = response
 
-if not res.text:
-    raise RuntimeError("the response did not include a text response")
-else:
-    res_text = res.text
 
 # Get Tokens from Response Object, either "prompt" or "response" tokens
 def get_toks(res: GenerateContentResponse, tok_type: str):
@@ -80,8 +85,17 @@ def main():
         get_verbose()
     
     try:
-        print("Response: \n")
-        print(res_text)
+        # Get Function Calls - TOOL CALLS if any
+        if res.function_calls:
+            if res.function_calls != None:
+                for fc in res.function_calls:
+                    print(f"Calling function: {fc.name}({fc.args})")
+
+        # Text Response from LLM            
+        if res.text:
+            print("Response: \n")
+            print(res.text)
+
     except RuntimeError as e:
         print(e)
 

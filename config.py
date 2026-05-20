@@ -1,0 +1,3 @@
+# config.py 
+
+MAX_CHARS_TO_READ_FROM_FILE = 10000
