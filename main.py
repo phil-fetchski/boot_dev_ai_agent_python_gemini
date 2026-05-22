@@ -1,79 +1,56 @@
 import os
 import argparse
-from dotenv import load_dotenv
-from google import genai
 from collections.abc import Callable
 from google.genai import types
-from prompts import system_prompt
-# Get Tokens from Response (res)
-from get_tokens import get_toks
-# INDEX of Tool Schemas/Function Declarations, and FUNCTION_MAP
-from functions.tool_schemas import *
+
+from get_verbose import get_verbose
+from gemini_generate import gemini 
 from functions.call_function import call_function
 
-# setup google genai Client
-load_dotenv()
-api_key = os.environ.get("GEMINI_API_KEY")
-
-if not api_key:
-    raise RuntimeError("Gemini API Key Not Found")
-
-client = genai.Client(api_key=api_key)
 
 # Arg Parser
-parser = argparse.ArgumentParser(description="Flash Bot Agent 007")
+parser = argparse.ArgumentParser(description="Gemini Agent 007")
 parser.add_argument("user_prompt", type=str, help="The user prompt is where you provide your question for the Agent")
 parser.add_argument("--verbose", action="store_true", help="Enable verbose output")
 args = parser.parse_args()
 
+# USER PROMPT
+user_prompt = args.user_prompt
+
+is_verbose = False
+
+if args.verbose:
+    is_verbose = True
+
 # MESSAGES
-messages = [types.Content(role="user", parts=[types.Part(text=args.user_prompt)])]
-
-# Generate Content with Gemini
-response = client.models.generate_content(
-    model='gemini-2.5-flash',
-    contents=messages,
-    config=types.GenerateContentConfig(
-        tools=[available_functions], system_instruction=system_prompt
-    )
-)
-
-# Get Response and Response Text or Raise
-if not response:
-    raise RuntimeError("there was no response")
-else:
-    res = response
-
-# Verbose Output Func
-def get_verbose():
-    try:
-        print("\n")
-        print(f"User prompt: {args.user_prompt}")
-        print("\n")
-
-        prompt_tok_msg = get_toks(res, "prompt") + "\n"
-        print(prompt_tok_msg)
-
-        response_tok_msg = get_toks(res, "response") + "\n"
-        print(response_tok_msg)
-
-    except (RuntimeError, ValueError) as e:
-        print(f"Error retrieving tokens: {e}")
+messages = [types.Content(role="user", parts=[types.Part(text=user_prompt)])]
 
 # MAIN
 def main():
-    
-    is_verbose = False 
 
-    if args.verbose:
-        get_verbose()
-        is_verbose = True
-    
+    iterations = 0
+
     try:
-        # Get Function Calls - TOOL CALLS if any
-        if res.function_calls:
-            if res.function_calls != None:
-                for fc in res.function_calls:
+        for _ in range(20):
+            iterations += 1
+            response: types.GenerateContentResponse = gemini(messages)
+            candidates = response.candidates
+
+            if candidates:
+                for c in candidates:
+                    if c.content: 
+                        can_con = c.content
+                        messages.append(can_con)
+            else:
+                return
+            
+            # Get Function Calls - TOOL CALLS if any
+            if response.function_calls:
+
+                fc_results: list = []
+
+                for fc in response.function_calls:
+
                     fc_result = call_function(fc)
 
                     if not fc_result.parts:
@@ -84,18 +61,29 @@ def main():
 
                     if is_verbose:
                         print(f"-> {fc_result.parts[0].function_response.response}")
-                    
 
-                    
+                    for part in fc_result.parts:
+                        fc_results.append(part)
 
-        # Text Response from LLM            
-        if res.text:
-            print("Response: \n")
-            print(res.text)
+                messages.append(types.Content(role="user", parts=fc_results))
+                    
+            # Text Response from LLM            
+            if response.text:
+                print("Response: \n")
+                print(response.text)
+
+            if is_verbose:
+                print(get_verbose(user_prompt, response))
+
+            if not response.function_calls or response.function_calls is None:
+                break
+
+            if iterations == 20:
+                print("The Agent has exceeded the maximum number of allowed iterations.")
+                exit(1)
 
     except RuntimeError as e:
         print(e)
     
-
 if __name__ == "__main__":
     main()
